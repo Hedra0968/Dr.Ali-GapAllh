@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إنشاء حساب جديد | مادة Data Acquisition</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon.png" type="image/png">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .brand-info { text-align: center; margin-bottom: 15px; }
+        .dr-title { color: var(--primary-color); font-weight: bold; font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+
+    <div class="login-container">
+        <div class="login-card">
+            <div class="brand-info">
+                <h2 style="color: var(--accent-color);">Data Acquisition</h2>
+                <p class="dr-title">أ.د/ علي جاب الله</p>
+            </div>
+            
+            <h2>إنشاء حساب طالب</h2>
+            <p class="subtitle">يجب استخدام Gmail حقيقي لتفعيل الحساب</p>
+
+            <form id="registerForm">
+                <div class="avatar-upload">
+                    <label for="profilePic">
+                        <div class="avatar-preview" id="imagePreview">
+                            <span>اضغط لرفع صورتك الشخصية</span>
+                        </div>
+                    </label>
+                    <input type="file" id="profilePic" accept="image/*" required style="display:none;">
+                </div>
+
+                <div class="input-group">
+                    <label>الاسم رباعي (بالعربية)</label>
+                    <input type="text" id="fullName" placeholder="الاسم كما في الكارنيه" required>
+                </div>
+
+                <div class="input-group">
+                    <label>رقم الـ ID</label>
+                    <input type="number" id="studentID" placeholder="ID الطالب" required>
+                </div>
+
+                <div class="input-group">
+                    <label>الشعبة</label>
+                    <select id="department" required>
+                        <option value="" disabled selected>اختر الشعبة</option>
+                        <option value="عام">عام</option>
+                        <option value="أجهزة">أجهزة</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label>السنة الدراسية</label>
+                    <select id="year" required>
+                        <option value="1">الفرقة الأولى</option>
+                        <option value="2">الفرقة الثانية</option>
+                        <option value="3">الفرقة الثالثة</option>
+                        <option value="4">الفرقة الرابعة</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label>رقم الموبايل</label>
+                    <input type="tel" id="phone" placeholder="01xxxxxxxxx" required>
+                </div>
+
+                <div class="input-group">
+                    <label>البريد الإلكتروني (Gmail الحقيقي)</label>
+                    <input type="email" id="email" placeholder="example@gmail.com" required>
+                </div>
+
+                <div class="input-group">
+                    <label>كلمة السر (يجب أن تكون معقدة)</label>
+                    <input type="password" id="password" placeholder="رموز، أرقام، وحروف" required>
+                    <small style="color: #666; font-size: 0.7rem;">يجب أن تحتوي على 8 رموز على الأقل (أرقام وحروف)</small>
+                </div>
+
+                <button type="submit" class="login-btn" id="regBtn">إرسال طلب التسجيل</button>
+            </form>
+
+            <div class="footer-links">
+                <p>لديك حساب بالفعل؟ <a href="index.html">تسجيل دخول</a></p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { auth, db, storage } from './js/firebase-config.js';
+        import { getDeviceId } from './js/app.js'; // استدعاء وظيفة بصمة الجهاز
+        import { createUserWithEmailAndPassword, sendEmailVerification } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-auth.js";
+        import { doc, setDoc } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
+        import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-storage.js";
+
+        // منع الحماية
+        document.addEventListener('contextmenu', e => e.preventDefault());
+
+        const picInput = document.getElementById('profilePic');
+        picInput.onchange = evt => {
+            const [file] = picInput.files;
+            if (file) {
+                const preview = document.getElementById('imagePreview');
+                preview.style.backgroundImage = `url(${URL.createObjectURL(file)})`;
+                preview.innerHTML = '';
+            }
+        };
+
+        const regForm = document.getElementById('registerForm');
+        regForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('regBtn');
+            const password = document.getElementById('password').value;
+
+            // شرط قوة الباسورد (أرقام وحروف وطول لا يقل عن 8)
+            const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
+            if (!passwordRegex.test(password)) {
+                alert("يجب أن تكون كلمة السر 8 رموز على الأقل وتحتوي على حروف وأرقام.");
+                return;
+            }
+
+            btn.innerText = "جاري التحقق والرفع...";
+            btn.disabled = true;
+
+            const file = picInput.files[0];
+            const email = document.getElementById('email').value;
+
+            try {
+                // 1. إنشاء الحساب في Firebase Auth
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+
+                // 2. إرسال رسالة التحقق للـ Gmail
+                await sendEmailVerification(user);
+
+                // 3. رفع الصورة الشخصية لـ Storage
+                const storageRef = ref(storage, `profiles/${user.uid}`);
+                await uploadBytes(storageRef, file);
+                const photoURL = await getDownloadURL(storageRef);
+
+                // 4. حفظ بيانات الطالب مع بصمة الجهاز (Device ID) لمنع التلاعب
+                await setDoc(doc(db, "users", user.uid), {
+                    uid: user.uid,
+                    name: document.getElementById('fullName').value,
+                    studentID: document.getElementById('studentID').value,
+                    department: document.getElementById('department').value,
+                    year: document.getElementById('year').value,
+                    phone: document.getElementById('phone').value,
+                    email: email,
+                    photoURL: photoURL,
+                    role: "student",
+                    status: "pending", // بانتظار موافقة الدكتور أو المندوب
+                    deviceId: getDeviceId(), // حفظ بصمة الجهاز الحالية
+                    emailVerified: false, 
+                    createdAt: new Date()
+                });
+
+                alert("تم إرسال طلبك بنجاح! يرجى تفعيل حسابك من خلال الرابط المرسل إلى Gmail (تفقد الـ Inbox والـ Spam) ثم انتظر موافقة أ.د/ علي جاب الله.");
+                window.location.href = "index.html";
+            } catch (error) {
+                alert("خطأ أثناء التسجيل: " + error.message);
+                btn.innerText = "إرسال طلب التسجيل";
+                btn.disabled = false;
+            }
+        });
+    </script>
+    <script src="js/app.js"></script>
+</body>
+</html>

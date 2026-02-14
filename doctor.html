@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة الأستاذ الدكتور | مادة Data Acquisition</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon.png" type="image/png">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .admin-card { background: #fff; padding: 20px; border-radius: 15px; margin-bottom: 20px; border-right: 5px solid var(--primary-color); }
+        .code-display { font-size: 3rem; font-weight: bold; color: var(--accent-color); letter-spacing: 10px; margin: 15px 0; border: 2px dashed #eee; padding: 10px; border-radius: 10px; }
+        .switch { position: relative; display: inline-block; width: 60px; height: 34px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--success-color); }
+        input:checked + .slider:before { transform: translateX(26px); }
+        .header-brand { text-align: center; margin-bottom: 25px; background: var(--primary-color); color: white; padding: 15px; border-radius: 15px; }
+    </style>
+</head>
+<body>
+
+    <div class="login-container" style="max-width: 800px;">
+        <div class="login-card">
+            <div class="header-brand">
+                <h1 style="font-size: 1.5rem; margin-bottom: 5px;">مادة Data Acquisition</h1>
+                <p style="font-weight: 300;">أ.د/ علي جاب الله</p>
+            </div>
+
+            <h2>لوحة تحكم الدكتور</h2>
+            <p class="subtitle">إدارة المحاضرة وتوزيع درجات أعمال السنة</p>
+
+            <div class="admin-card">
+                <h3>نظام الحضور الذكي (Secret Code)</h3>
+                <div style="margin: 15px 0;">
+                    <span>حالة باب الحضور: </span>
+                    <label class="switch">
+                        <input type="checkbox" id="attendanceStatus">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <p>السكرت كود الحالي للمحاضرة:</p>
+                <div class="code-display" id="currentCode">----</div>
+                <button class="login-btn" onclick="generateCode()">توليد كود جديد للمحاضرة</button>
+            </div>
+
+            <div class="admin-card">
+                <h3>توزيع درجات أعمال السنة (مرونة كاملة)</h3>
+                <div class="stats-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div class="input-group">
+                        <label>درجة الحضور</label>
+                        <input type="number" id="attendanceGrade" placeholder="مثلاً 10">
+                    </div>
+                    <div class="input-group">
+                        <label>درجة الكويز</label>
+                        <input type="number" id="quizGrade" placeholder="مثلاً 20">
+                    </div>
+                    <div class="input-group">
+                        <label>درجة السلوك</label>
+                        <input type="number" id="behaviorGrade" placeholder="مثلاً 5">
+                    </div>
+                    <div class="input-group">
+                        <label>درجة إضافية (Bonus)</label>
+                        <input type="number" id="bonusGrade" placeholder="مثلاً 5">
+                    </div>
+                </div>
+                <button class="login-btn" style="background: var(--primary-color);" onclick="saveGrades()">حفظ تقسيمة الدرجات واعتمادها</button>
+            </div>
+
+            <button class="login-btn" style="background: var(--danger-color); margin-top: 20px;" onclick="logout()">تسجيل الخروج الآمن</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { auth, db } from './js/firebase-config.js';
+        import { doc, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
+        import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-auth.js";
+
+        // حماية الصفحة: التأكد إن اللي داخل "دكتور"
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                const userDoc = await getDoc(doc(db, "users", user.uid));
+                if (!userDoc.exists() || userDoc.data().role !== "doctor") {
+                    alert("عذراً، هذه الصفحة مخصصة للأستاذ الدكتور فقط.");
+                    window.location.href = "index.html";
+                }
+            } else {
+                window.location.href = "index.html";
+            }
+        });
+
+        // وظيفة توليد كود عشوائي
+        window.generateCode = async () => {
+            const newCode = Math.floor(1000 + Math.random() * 9000); 
+            document.getElementById('currentCode').innerText = newCode;
+            
+            await setDoc(doc(db, "settings", "current_session"), {
+                secretCode: newCode.toString(),
+                isOpened: document.getElementById('attendanceStatus').checked,
+                updatedAt: new Date()
+            }, { merge: true });
+            alert("تم توليد الكود: " + newCode + " وتعميمه على الطلاب.");
+        };
+
+        // تحديث حالة فتح/قفل الحضور
+        document.getElementById('attendanceStatus').onchange = async (e) => {
+            await updateDoc(doc(db, "settings", "current_session"), {
+                isOpened: e.target.checked
+            });
+            alert(e.target.checked ? "تم فتح باب استقبال طلبات الحضور" : "تم غلق باب الحضور بنجاح");
+        };
+
+        // حفظ تقسيمة الدرجات (مرونة كاملة للدكتور)
+        window.saveGrades = async () => {
+            const attGrade = document.getElementById('attendanceGrade').value;
+            const qzGrade = document.getElementById('quizGrade').value;
+            const bhGrade = document.getElementById('behaviorGrade').value;
+            const bnGrade = document.getElementById('bonusGrade').value;
+            
+            await setDoc(doc(db, "settings", "grades_config"), {
+                attendance: attGrade,
+                quiz: qzGrade,
+                behavior: bhGrade,
+                bonus: bnGrade,
+                updatedBy: "Dr. Ali Gaballah",
+                timestamp: new Date()
+            });
+            alert("تم حفظ تقسيمة درجات أعمال السنة وتحديث النظام الآلي.");
+        };
+
+        window.logout = () => signOut(auth).then(() => {
+            localStorage.clear();
+            window.location.href = "index.html";
+        });
+    </script>
+    <script src="js/app.js"></script>
+</body>
+</html>

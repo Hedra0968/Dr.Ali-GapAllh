@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة المنظم | إدارة الحضور والإكسيل</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon.png" type="image/png">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <style>
+        .request-card {
+            background: #fff;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-right: 5px solid var(--accent-color);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .time-tag { font-size: 0.8rem; color: #888; }
+        .action-btns { display: flex; gap: 10px; }
+        .accept-btn { background: var(--success-color); color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
+        .table-container { margin-top: 20px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; }
+        th, td { padding: 12px; text-align: center; border-bottom: 1px solid #eee; }
+        th { background: var(--primary-color); color: white; }
+        /* إضافة ستايل لعنوان المادة */
+        .header-info { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .new-users-section { margin-top: 30px; border-top: 2px dashed var(--accent-color); padding-top: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="login-container" style="max-width: 900px;">
+        <div class="login-card">
+            <div class="header-info">
+                <h2 style="color: var(--primary-color);">Data Acquisition</h2>
+                <p style="font-weight: bold; color: var(--accent-color);">إشراف: أ.د/ علي جاب الله</p>
+            </div>
+
+            <h2>لوحة التحكم والمتابعة</h2>
+            <p class="subtitle">إدارة طلبات الحضور واستخراج التقارير</p>
+
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <h4 id="waitingCount">0</h4>
+                    <p>في الانتظار</p>
+                </div>
+                <button class="login-btn" style="background: var(--success-color);" onclick="acceptAll()">اعتماد الكل (Accept All)</button>
+                <button class="login-btn" style="background: var(--accent-color);" onclick="exportToExcel()">تحميل شيت الإكسيل</button>
+            </div>
+
+            <div id="requestsList"></div>
+
+            <div class="new-users-section">
+                <h3>طلبات الانضمام الجديدة (Pending Users)</h3>
+                <div id="newUsersList" style="margin-top: 15px;">
+                    <p style="color: #888;">جاري تحميل طلبات الانضمام...</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script type="module">
+        import { auth, db } from './js/firebase-config.js';
+        import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, getDocs, serverTimestamp, orderBy } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
+        import { checkAccess } from './js/app.js';
+
+        // حماية الصفحة للمنظمين فقط
+        auth.onAuthStateChanged(user => {
+            if (!user) window.location.href = "index.html";
+        });
+
+        // 1. عرض طلبات الحضور لحظة بلحظة (Live Update)
+        const requestsList = document.getElementById('requestsList');
+        const q = query(collection(db, "attendance_requests"), where("status", "==", "waiting"), orderBy("timestamp", "asc"));
+
+        onSnapshot(q, (snapshot) => {
+            requestsList.innerHTML = "<h3>كشف الحضور الحالي:</h3>";
+            document.getElementById('waitingCount').innerText = snapshot.size;
+            
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                const time = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('ar-EG') : "جاري التسجيل..";
+                
+                requestsList.innerHTML += `
+                    <div class="request-card" id="card-${doc.id}">
+                        <div>
+                            <strong>${data.studentName}</strong> <br>
+                            <span class="time-tag">وصل: ${time} | ID: ${data.studentID}</span>
+                        </div>
+                        <div class="action-btns">
+                            <button class="accept-btn" onclick="acceptStudent('${doc.id}')">قبول</button>
+                        </div>
+                    </div>
+                `;
+            });
+        });
+
+        // 2. قبول طالب واحد في الحضور
+        window.acceptStudent = async (id) => {
+            await updateDoc(doc(db, "attendance_requests", id), {
+                status: "present",
+                acceptedAt: serverTimestamp()
+            });
+        };
+
+        // 3. قبول الكل بضغطة واحدة
+        window.acceptAll = async () => {
+            const querySnapshot = await getDocs(q);
+            if(querySnapshot.empty) { alert("لا توجد طلبات معلقة"); return; }
+            querySnapshot.forEach(async (document) => {
+                await acceptStudent(document.id);
+            });
+            alert("تم اعتماد جميع الطلاب الحاضرين");
+        };
+
+        // 4. تصدير البيانات لإكسيل (Excel) مع تعديلات احترافية
+        window.exportToExcel = async () => {
+            const allPresent = query(collection(db, "attendance_requests"), where("status", "==", "present"));
+            const querySnapshot = await getDocs(allPresent);
+            
+            let excelData = [];
+            querySnapshot.forEach((doc) => {
+                const d = doc.data();
+                const arrival = d.timestamp ? d.timestamp.toDate() : new Date();
+                
+                // تحديد حالة التأخير (بناءً على الساعة 9 صباحاً كمثال)
+                const statusLabel = arrival.getHours() < 9 ? "مبكر" : "متأخر";
+
+                excelData.push({
+                    "المادة": "Data Acquisition",
+                    "الدكتور": "علي جاب الله",
+                    "اسم الطالب": d.studentName,
+                    "رقم الـ ID": d.studentID,
+                    "وقت الوصول": arrival.toLocaleTimeString('ar-EG'),
+                    "التاريخ": arrival.toLocaleDateString('ar-EG'),
+                    "الالتزام الزمني": statusLabel
+                });
+            });
+
+            const worksheet = XLSX.utils.json_to_sheet(excelData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "كشف الحضور");
+            XLSX.writeFile(workbook, `Data_Acquisition_Report_${new Date().toLocaleDateString()}.xlsx`);
+        };
+
+        // --- إضافة ميزة: قبول الحسابات الجديدة (العضوية) ---
+        const newUsersList = document.getElementById('newUsersList');
+        const userQuery = query(collection(db, "users"), where("status", "==", "pending"), where("role", "==", "student"));
+
+        onSnapshot(userQuery, (snapshot) => {
+            newUsersList.innerHTML = "";
+            if (snapshot.empty) {
+                newUsersList.innerHTML = '<p style="color: #27ae60;">لا توجد طلبات انضمام جديدة حالياً.</p>';
+                return;
+            }
+
+            snapshot.forEach((userDoc) => {
+                const userData = userDoc.data();
+                newUsersList.innerHTML += `
+                    <div class="request-card" style="border-right-color: var(--success-color);">
+                        <div>
+                            <strong>${userData.name}</strong> (جديد) <br>
+                            <span class="time-tag">ID: ${userData.studentID} | شعبة: ${userData.department}</span>
+                        </div>
+                        <button class="accept-btn" style="background: var(--primary-color);" onclick="approveUser('${userDoc.id}')">تفعيل الحساب</button>
+                    </div>
+                `;
+            });
+        });
+
+        window.approveUser = async (uid) => {
+            try {
+                await updateDoc(doc(db, "users", uid), { status: "active" });
+                alert("تم تفعيل حساب الطالب بنجاح");
+            } catch (e) { alert("خطأ في التفعيل: " + e.message); }
+        };
+
+    </script>
+    <script src="js/app.js"></script>
+</body>
+</html>

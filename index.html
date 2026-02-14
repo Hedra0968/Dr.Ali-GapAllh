@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تسجيل الدخول | مادة Data Acquisition</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon.png" type="image/png">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .brand-logo {
+            margin-bottom: 15px;
+        }
+        .dr-name {
+            color: var(--primary-color);
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-container">
+        <div class="login-card">
+            <div class="brand-logo">
+                <h1 style="color: var(--accent-color); font-size: 1.8rem; margin-bottom: 5px;">Data Acquisition</h1>
+                <span class="dr-name">أ.د/ علي جاب الله</span>
+            </div>
+
+            <h2>تسجيل الدخول</h2>
+            <p class="subtitle">سجل دخولك للمتابعة في المنصة التعليمية</p>
+            
+            <form id="loginForm">
+                <div class="input-group">
+                    <label>البريد الإلكتروني (Gmail)</label>
+                    <input type="email" id="email" placeholder="example@gmail.com" required>
+                </div>
+
+                <div class="input-group">
+                    <label>كلمة السر</label>
+                    <input type="password" id="password" placeholder="********" required>
+                </div>
+
+                <button type="submit" class="login-btn" id="loginBtn">دخول للمنصة</button>
+            </form>
+
+            <div class="footer-links">
+                <p>ليس لديك حساب؟ <a href="register.html">تقديم طلب انضمام</a></p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { auth, db } from './js/firebase-config.js';
+        import { signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-auth.js";
+        import { doc, getDoc } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
+
+        // 1. نظام الحماية: منع كليك يمين واختصارات المطورين (تم الحفاظ عليه كما طلبت)
+        document.addEventListener('contextmenu', event => event.preventDefault());
+        document.onkeydown = function(e) {
+            // منع F12 و Ctrl+Shift+I و Ctrl+Shift+J و Ctrl+U
+            if(e.keyCode == 123 || 
+               (e.ctrlKey && e.shiftKey && (e.keyCode == 73 || e.keyCode == 74)) || 
+               (e.ctrlKey && e.keyCode == 85)) {
+                return false;
+            }
+        };
+
+        const loginForm = document.getElementById('loginForm');
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('loginBtn');
+            btn.innerText = "جاري التحقق...";
+            btn.disabled = true;
+
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                // تسجيل الدخول بالفايربيز
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+
+                // 2. شرط الـ Gmail الحقيقي: التأكد إن الطالب فعل الحساب من رسالة الإيميل
+                if (!user.emailVerified) {
+                    alert("يرجى تفعيل بريدك الإلكتروني أولاً! تفقد رسائل الـ Gmail (بما في ذلك Spam).");
+                    await signOut(auth); // طرده من السيستم لحد ما يفعل
+                    location.reload();
+                    return;
+                }
+
+                // 3. جلب بيانات المستخدم من Firestore للتأكد من الحالة والرتبة
+                const userDoc = await getDoc(doc(db, "users", user.uid));
+                
+                if (userDoc.exists()) {
+                    const userData = userDoc.data();
+                    
+                    // التأكد إن المندوب أو الدكتور وافق على الحساب
+                    if (userData.status === "pending") {
+                        alert("حسابك مفعل بريدياً ولكن بانتظار موافقة الإدارة (المندوب/د. علي جاب الله).");
+                        await signOut(auth);
+                        location.reload();
+                    } else {
+                        // تخزين الرتبة للتوجيه
+                        localStorage.setItem('userRole', userData.role);
+                        
+                        // التوجيه التلقائي حسب رتبة المستخدم
+                        if (userData.role === "doctor") {
+                            window.location.href = "doctor.html";
+                        } else if (userData.role === "assistant") {
+                            window.location.href = "assistant.html";
+                        } else {
+                            window.location.href = "student.html";
+                        }
+                    }
+                } else {
+                    alert("لم يتم العثور على بيانات لهذا الحساب.");
+                    await signOut(auth);
+                }
+
+            } catch (error) {
+                // معالجة الأخطاء (باسورد غلط، إيميل مش موجود، إلخ)
+                let errorMsg = "حدث خطأ أثناء الدخول";
+                if (error.code === "auth/wrong-password") errorMsg = "كلمة السر غير صحيحة";
+                if (error.code === "auth/user-not-found") errorMsg = "هذا البريد غير مسجل";
+                if (error.code === "auth/invalid-email") errorMsg = "صيغة البريد غير صحيحة";
+                
+                alert(errorMsg);
+                btn.innerText = "دخول للمنصة";
+                btn.disabled = false;
+            }
+        });
+    </script>
+    <script src="js/app.js"></script>
+</body>
+</html>

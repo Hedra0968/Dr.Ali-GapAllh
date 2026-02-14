@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة الطالب | كارت الهوية الرقمي</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon.png" type="image/png">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* تنسيقات إضافية خاصة بكارت الهوية */
+        .id-card {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            border-radius: 20px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+            margin-bottom: 25px;
+            position: relative;
+            overflow: hidden;
+        }
+        /* علامة مائية باسم المادة والدكتور خلف الكارت */
+        .id-card::after {
+            content: "Data Acquisition";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-20deg);
+            font-size: 3rem;
+            opacity: 0.05;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+        .student-photo {
+            width: 110px;
+            height: 110px;
+            border-radius: 50%;
+            border: 4px solid white;
+            margin: 0 auto 15px;
+            background-size: cover;
+            background-position: center;
+            position: relative;
+            z-index: 2;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            padding-bottom: 5px;
+            position: relative;
+            z-index: 2;
+        }
+        .attendance-box {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }
+        .secret-input {
+            font-size: 1.5rem;
+            text-align: center;
+            letter-spacing: 5px;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+        .brand-header {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-container" style="margin-top: 20px;">
+        
+        <div class="brand-header">
+            <h2 style="color: var(--primary-color); margin-bottom: 0;">Data Acquisition</h2>
+            <p style="color: var(--accent-color); font-weight: bold;">أ.د/ علي جاب الله</p>
+        </div>
+
+        <div class="id-card">
+            <div class="student-photo" id="displayPhoto"></div>
+            <h3 id="displayName">جاري التحميل...</h3>
+            <p id="displayID" style="opacity: 0.9;">ID: --</p>
+            
+            <div class="info-row">
+                <span>الشعبة:</span>
+                <span id="displayDept">--</span>
+            </div>
+            <div class="info-row">
+                <span>السنة:</span>
+                <span id="displayYear">--</span>
+            </div>
+        </div>
+
+        <div class="attendance-box">
+            <h4>تسجيل حضور المحاضرة</h4>
+            <p class="subtitle">أدخل السكرت كود الذي أعلنه الدكتور</p>
+            
+            <input type="text" id="secretCode" class="secret-input" placeholder="0000" maxlength="4">
+            <button class="login-btn" style="background: var(--success-color);" id="submitAttendance">
+                إرسال طلب الحضور
+            </button>
+        </div>
+
+        <button class="login-btn" style="background: var(--danger-color); margin-top: 20px; padding: 8px;" onclick="logout()">
+            تسجيل الخروج
+        </button>
+    </div>
+
+    <script type="module">
+        import { auth, db } from './js/firebase-config.js';
+        import { getDeviceId } from './js/app.js'; // استدعاء وظيفة بصمة الجهاز
+        import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
+        import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-auth.js";
+
+        // منع الحماية
+        document.addEventListener('contextmenu', e => e.preventDefault());
+
+        // التحقق من هوية الطالب وجلب بياناته
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                const userDoc = await getDoc(doc(db, "users", user.uid));
+                if (userDoc.exists()) {
+                    const data = userDoc.data();
+                    
+                    // حماية: التأكد من أن الطالب يستخدم جهازه المسجل فقط
+                    if (data.deviceId && data.deviceId !== getDeviceId()) {
+                        alert("عذراً، لا يمكنك الدخول إلا من جهازك الذي قمت بالتسجيل منه أول مرة.");
+                        await signOut(auth);
+                        window.location.href = "index.html";
+                        return;
+                    }
+
+                    // عرض البيانات في الكارت
+                    document.getElementById('displayName').innerText = data.name;
+                    document.getElementById('displayID').innerText = "ID: " + data.studentID;
+                    document.getElementById('displayDept').innerText = data.department;
+                    document.getElementById('displayYear').innerText = "الفرقة " + data.year;
+                    document.getElementById('displayPhoto').style.backgroundImage = `url(${data.photoURL})`;
+                }
+            } else {
+                window.location.href = "index.html";
+            }
+        });
+
+        // تسجيل الحضور
+        document.getElementById('submitAttendance').onclick = async () => {
+            const codeInput = document.getElementById('secretCode').value;
+            const user = auth.currentUser;
+
+            if (codeInput.length < 4) {
+                alert("يرجى إدخال كود صحيح مكون من 4 أرقام");
+                return;
+            }
+
+            try {
+                // التحقق من حالة الجلسة والكود من إعدادات الدكتور
+                const settingsDoc = await getDoc(doc(db, "settings", "current_session"));
+                
+                if (!settingsDoc.exists()) {
+                    alert("لم يتم تفعيل نظام الحضور بعد.");
+                    return;
+                }
+
+                const realCode = settingsDoc.data().secretCode;
+                const isOpened = settingsDoc.data().isOpened;
+
+                if (!isOpened) {
+                    alert("عذراً، باب الحضور مغلق حالياً بقرار من الدكتور.");
+                    return;
+                }
+
+                if (codeInput === realCode) {
+                    // تسجيل الطلب في قائمة الانتظار
+                    await setDoc(doc(db, "attendance_requests", user.uid), {
+                        studentUID: user.uid,
+                        studentName: document.getElementById('displayName').innerText,
+                        studentID: document.getElementById('displayID').innerText.replace("ID: ", ""),
+                        timestamp: serverTimestamp(),
+                        status: "waiting", // في انتظار موافقة المنظم
+                        subject: "Data Acquisition",
+                        doctor: "علي جاب الله"
+                    });
+                    alert("تم إرسال طلب الحضور بنجاح! انتظر تأكيد المنظم ليظهر اسمك في الشيت.");
+                } else {
+                    alert("الكود غير صحيح، يرجى مراجعة الدكتور أو المندوب.");
+                }
+            } catch (error) {
+                alert("حدث خطأ أثناء الاتصال بالخادم: " + error.message);
+            }
+        };
+
+        window.logout = () => {
+            signOut(auth).then(() => {
+                localStorage.clear();
+                window.location.href = "index.html";
+            });
+        };
+    </script>
+    <script src="js/app.js"></script>
+</body>
+</html>
