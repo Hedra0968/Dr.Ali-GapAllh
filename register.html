@@ -89,84 +89,74 @@
     </div>
 
     <script type="module">
-        import { auth, db, storage } from './js/firebase-config.js';
-        import { getDeviceId } from './js/app.js'; // استدعاء وظيفة بصمة الجهاز
-        import { createUserWithEmailAndPassword, sendEmailVerification } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-auth.js";
-        import { doc, setDoc } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
-        import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-storage.js";
+    import { auth, db } from './js/firebase-config.js'; // شيلنا الـ storage من هنا
+    import { createUserWithEmailAndPassword, sendEmailVerification } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-auth.js";
+    import { doc, setDoc } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
 
-        // منع الحماية
-        document.addEventListener('contextmenu', e => e.preventDefault());
+    // دالة بصمة الجهاز مباشرة هنا لضمان العمل
+    function generateDeviceId() {
+        return btoa(navigator.userAgent + screen.width);
+    }
 
-        const picInput = document.getElementById('profilePic');
-        picInput.onchange = evt => {
-            const [file] = picInput.files;
-            if (file) {
-                const preview = document.getElementById('imagePreview');
-                preview.style.backgroundImage = `url(${URL.createObjectURL(file)})`;
-                preview.innerHTML = '';
-            }
-        };
+    // كود معاينة الصورة (Preview) سيبه زي ما هو بس شيل الـ required من الـ Input بتاع الصورة
+    const picInput = document.getElementById('profilePic');
+    picInput.onchange = evt => {
+        const [file] = picInput.files;
+        if (file) {
+            document.getElementById('imagePreview').style.backgroundImage = `url(${URL.createObjectURL(file)})`;
+            document.getElementById('imagePreview').innerHTML = '';
+        }
+    };
 
-        const regForm = document.getElementById('registerForm');
-        regForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('regBtn');
-            const password = document.getElementById('password').value;
+    document.getElementById('registerForm').addEventListener('submit', async (e) => {
+        e.preventDefault(); // ده السطر اللي بيمنع تفريغ الخانات
+        
+        const btn = document.getElementById('regBtn');
+        btn.innerText = "جاري الحفظ...";
+        btn.disabled = true;
 
-            // شرط قوة الباسورد (أرقام وحروف وطول لا يقل عن 8)
-            const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
-            if (!passwordRegex.test(password)) {
-                alert("يجب أن تكون كلمة السر 8 رموز على الأقل وتحتوي على حروف وأرقام.");
-                return;
-            }
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const fullName = document.getElementById('fullName').value;
 
-            btn.innerText = "جاري التحقق والرفع...";
-            btn.disabled = true;
+        try {
+            // 1. إنشاء الحساب في Authentication
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
 
-            const file = picInput.files[0];
-            const email = document.getElementById('email').value;
+            // 2. تفعيل الإيميل
+            await sendEmailVerification(user);
 
-            try {
-                // 1. إنشاء الحساب في Firebase Auth
-                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-                const user = userCredential.user;
+            // 3. السطر السحري البديل للـ Storage (الصورة الافتراضية)
+            const photoURL = "https://ui-avatars.com/api/?name=" + encodeURIComponent(fullName);
 
-                // 2. إرسال رسالة التحقق للـ Gmail
-                await sendEmailVerification(user);
+            // 4. حفظ البيانات في Firestore
+            await setDoc(doc(db, "users", user.uid), {
+                uid: user.uid,
+                name: fullName,
+                studentID: document.getElementById('studentID').value,
+                department: document.getElementById('department').value,
+                email: email,
+                photoURL: photoURL, // بنسيف الرابط الجاهز بدل الرفع
+                role: "student",
+                status: "pending",
+                deviceId: generateDeviceId(),
+                createdAt: new Date()
+            });
 
-                // 3. رفع الصورة الشخصية لـ Storage
-                // حط السطر ده مكانه
-                const photoURL = "https://ui-avatars.com/api/?name=" + encodeURIComponent(document.getElementById('fullName').value);
-                
+            alert("تم إرسال طلبك! فعل حسابك من Gmail وانتظر موافقة الدكتور.");
+            window.location.href = "index.html";
 
-                // 4. حفظ بيانات الطالب مع بصمة الجهاز (Device ID) لمنع التلاعب
-                await setDoc(doc(db, "users", user.uid), {
-                    uid: user.uid,
-                    name: document.getElementById('fullName').value,
-                    studentID: document.getElementById('studentID').value,
-                    department: document.getElementById('department').value,
-                    year: document.getElementById('year').value,
-                    phone: document.getElementById('phone').value,
-                    email: email,
-                    photoURL: photoURL,
-                    role: "student",
-                    status: "pending", // بانتظار موافقة الدكتور أو المندوب
-                    deviceId: getDeviceId(), // حفظ بصمة الجهاز الحالية
-                    emailVerified: false, 
-                    createdAt: new Date()
-                });
+        } catch (error) {
+            alert("حدث خطأ: " + error.message);
+            btn.innerText = "إرسال طلب التسجيل";
+            btn.disabled = false;
+        }
+    });
+</script>
 
-                alert("تم إرسال طلبك بنجاح! يرجى تفعيل حسابك من خلال الرابط المرسل إلى Gmail (تفقد الـ Inbox والـ Spam) ثم انتظر موافقة أ.د/ علي جاب الله.");
-                window.location.href = "index.html";
-            } catch (error) {
-                alert("خطأ أثناء التسجيل: " + error.message);
-                btn.innerText = "إرسال طلب التسجيل";
-                btn.disabled = false;
-            }
-        });
-    </script>
     <script src="js/app.js"></script>
 </body>
 
 </html>
+
