@@ -136,9 +136,9 @@
                 await sendEmailVerification(user);
 
                 // 3. رفع الصورة الشخصية لـ Storage
-                const storageRef = ref(storage, `profiles/${user.uid}`);
-                await uploadBytes(storageRef, file);
-                const photoURL = await getDownloadURL(storageRef);
+                // حط السطر ده مكانه
+                const photoURL = "https://ui-avatars.com/api/?name=" + encodeURIComponent(document.getElementById('fullName').value);
+                
 
                 // 4. حفظ بيانات الطالب مع بصمة الجهاز (Device ID) لمنع التلاعب
                 await setDoc(doc(db, "users", user.uid), {
@@ -168,4 +168,5 @@
     </script>
     <script src="js/app.js"></script>
 </body>
+
 </html>
