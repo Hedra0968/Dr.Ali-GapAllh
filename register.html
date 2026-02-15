@@ -89,65 +89,51 @@
     </div>
 
     <script type="module">
-    import { auth, db } from './js/firebase-config.js'; // شيلنا الـ storage من هنا
+    // استدعاء مباشر لضمان وصول الـ DB والـ Auth
+    import { auth, db } from './js/firebase-config.js';
     import { createUserWithEmailAndPassword, sendEmailVerification } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-auth.js";
-    import { doc, setDoc } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
-
-    // دالة بصمة الجهاز مباشرة هنا لضمان العمل
-    function generateDeviceId() {
-        return btoa(navigator.userAgent + screen.width);
-    }
-
-    // كود معاينة الصورة (Preview) سيبه زي ما هو بس شيل الـ required من الـ Input بتاع الصورة
-    const picInput = document.getElementById('profilePic');
-    picInput.onchange = evt => {
-        const [file] = picInput.files;
-        if (file) {
-            document.getElementById('imagePreview').style.backgroundImage = `url(${URL.createObjectURL(file)})`;
-            document.getElementById('imagePreview').innerHTML = '';
-        }
-    };
+    import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
 
     document.getElementById('registerForm').addEventListener('submit', async (e) => {
-        e.preventDefault(); // ده السطر اللي بيمنع تفريغ الخانات
-        
+        e.preventDefault();
         const btn = document.getElementById('regBtn');
         btn.innerText = "جاري الحفظ...";
         btn.disabled = true;
 
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
-        const fullName = document.getElementById('fullName').value;
-
         try {
-            // 1. إنشاء الحساب في Authentication
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const fullName = document.getElementById('fullName').value;
+
+            // 1. إنشاء الحساب
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const user = userCredential.user;
 
-            // 2. تفعيل الإيميل
+            // 2. إرسال إيميل التفعيل
             await sendEmailVerification(user);
 
-            // 3. السطر السحري البديل للـ Storage (الصورة الافتراضية)
-            const photoURL = "https://ui-avatars.com/api/?name=" + encodeURIComponent(fullName);
+            // 3. صورة افتراضية (عشان نهرب من خناقة الـ Storage والـ Upgrade)
+            const photoURL = `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=0D8ABC&color=fff`;
 
-            // 4. حفظ البيانات في Firestore
+            // 4. حفظ البيانات (هنا السيستم هيكريت كولكشن users تلقائياً)
+            // استخدمنا setDoc مع doc لضمان الربط بـ UID الطالب
             await setDoc(doc(db, "users", user.uid), {
                 uid: user.uid,
                 name: fullName,
-                studentID: document.getElementById('studentID').value,
-                department: document.getElementById('department').value,
                 email: email,
-                photoURL: photoURL, // بنسيف الرابط الجاهز بدل الرفع
+                studentID: document.getElementById('studentID').value || "N/A",
+                department: document.getElementById('department').value || "عام",
+                photoURL: photoURL,
                 role: "student",
                 status: "pending",
-                deviceId: generateDeviceId(),
-                createdAt: new Date()
+                createdAt: serverTimestamp() // بيسجل وقت السيرفر بدقة
             });
 
-            alert("تم إرسال طلبك! فعل حسابك من Gmail وانتظر موافقة الدكتور.");
+            alert("مبروك! سجلت بنجاح. فعل حسابك من الجيميل واستنى موافقة الدكتور.");
             window.location.href = "index.html";
 
         } catch (error) {
+            console.error(error);
             alert("حدث خطأ: " + error.message);
             btn.innerText = "إرسال طلب التسجيل";
             btn.disabled = false;
@@ -155,8 +141,10 @@
     });
 </script>
 
+
     <script src="js/app.js"></script>
 </body>
 
 </html>
+
 
